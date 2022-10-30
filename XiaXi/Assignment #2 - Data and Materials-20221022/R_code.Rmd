@@ -21,6 +21,10 @@ library(orchaRd)
 ```
 
 ```{r}
+# GitHub:https://github.com/ayrxx/ixia.git
+```
+
+```{r}
 data = read.csv("OA_activitydat_20190302_BIOL3207.csv")
 data_clean <- data%>%filter(!(is.na(activity)))
 data_clean = as_tibble(data_clean)
@@ -182,51 +186,4 @@ MLMT
 
 #[1]Riebesell U, Fabry V, Hansson L, Gattuso J-P. Guide to best practices for ocean acidification research and data reporting. LU: Publications Office; 2011. https://data.europa.eu/doi/10.2777/66906.
 #[2]Baumann H. Experimental assessments of marine species sensitivities to ocean acidification and co-stressors: How far have we come? Can J Zool. 2019;97:399–408.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-```
-
-
-
-
 ```
