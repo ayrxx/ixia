@@ -1,0 +1,232 @@
+---
+title: "XIXIA_6207"
+author: "XIXIA"
+date: '2022-10-23'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(plotrix)
+library(flextable)
+library(tidyverse)
+library(tidyr)
+library(metafor)
+library(pacman)
+library(purrr)
+
+p_load(bookdown, devtools, tidyverse, ggforce, GGally, flextable, latex2exp, png, magick, metafor, MASS, emmeans, R.rsp) # basically just 
+devtools::install_github("daniel1noble/orchaRd", force = TRUE)
+library(orchaRd)
+```
+
+```{r}
+data = read.csv("OA_activitydat_20190302_BIOL3207.csv")
+data_clean <- data%>%filter(!(is.na(activity)))
+data_clean = as_tibble(data_clean)
+
+```
+
+Drop out irrelevant columns and check that there are no spelling issues in `species` and `treatment`. Create a table of summary data that includes: 1) the mean, 2) the standard error and 3) the sample sizes of unique fish across ALL six fish species for each treatment. 
+
+```{r summaryTab}
+# Drop irrelevant columns
+data_clean %>% dplyr::select("species","treatment","animal_id","activity")
+data_clean$species <- as.factor(data_clean$species)
+data_clean$treatment <- as.factor(data_clean$treatment)
+levels(data_clean$species)
+levels(data_clean$treatment)
+data_pre <- data_clean %>%
+  group_by(species) %>% 
+  summarise(ctrl.mean = mean(activity[treatment ==  "control"]),
+            oa.mean = mean(activity[treatment == "CO2"]),
+            ctrl.sd=std.error(activity[treatment == "control"]),
+            oa.sd=std.error(activity[treatment == "CO2"]))
+
+data_count = data_clean %>% 
+  group_by(species, treatment) %>% count()
+data_count = spread(data_count, treatment,n)
+
+names(data_count) = c("Species","oa.n", "ctrl.n")
+names(data_pre)[1] = "Species"
+data_new = merge(data_pre, data_count, by = "Species")
+
+  
+  
+# Use flextable to render the summary table in a tidy format
+flextable(
+  data_new,
+  col_keys = names(data_new),
+  cwidth = 0.75,
+  cheight = 0.25,
+  defaults = list(),
+  theme_fun = theme_booktabs
+)
+```
+```{r}
+# merge the summary statistics with the metadata
+clark = read.csv("clark_paper_data.csv")
+ocean = read.csv("ocean_meta_data.csv")
+```
+```{r}
+data_clean %>% dplyr::select("species","treatment","animal_id","activity")
+data_clark = merge(clark,data_new)
+data_final = rbind(ocean, data_clark)%>%
+mutate(residual = 1:n())
+flextable(
+  data_final,
+  col_keys = names(data_final),
+  cwidth = 0.75,
+  cheight = 0.25,
+  defaults = list(),
+  theme_fun = theme_booktabs
+)
+data_final = data_final%>%filter(ctrl.n>0, ctrl.mean>0, ctrl.sd>0, oa.n>0,oa.mean>0,oa.sd>0)# to make sure the log can reflect the actual comparision between control and treat groups.
+```
+```{r}
+analysis = escalc(measure = "ROM", m1i = oa.mean, m2i = ctrl.mean, sd1i = oa.sd, sd2i = ctrl.sd,n1i = oa.n, n2i = ctrl.n, data = data_final)
+
+res = rma(yi,vi,method = "DL",data = analysis)
+MLMA = rma.mv(yi~1,V = vi, method = "REML", random = list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
+MLMA
+# according to warnings, "Warning: Ratio of largest to smallest sampling variance extremely large. May not be able to obtain stable results." So it will be better to remove some extreme points of it
+analysis_2 = analysis[which(analysis$vi<1.46307 & analysis$vi>0.00074 & analysis$yi<2.2 & analysis$yi > -1.6),]
+MLMA_1 = rma.mv(yi~1,V = vi, method = "REML", random = list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis_2)
+# to build a random effects model of data_final
+```
+```{r}
+predict(MLMA, transf = exp)
+predict(MLMA_1, transf = exp)
+# prediction intervals about the overall true mean of effect size; log response ratio
+```
+
+```{r}
+i2_vals <- orchaRd::i2_ml(MLMA)
+
+i2 <- tibble(type = firstup(gsub("I2_", "",names(i2_vals))), I2 = i2_vals)
+
+flextable(i2) 
+
+i2_vals <- orchaRd::i2_ml(MLMA_1)
+
+i2 <- tibble(type = firstup(gsub("I2_", "",names(i2_vals))), I2 = i2_vals)
+
+flextable(i2)
+# Meausres of heterogeneity in effect size estimates across studies
+```
+```{r}
+# the forest plot showing the mean estimate
+
+forest(MLMA_1, atransf = exp, at = log(c(.05, .25, 1, 4)), xlim=c(-6,6), cex=.5)
+text(-5, -10, pos=4, cex=.5, "number of samples: 628; number of studies: 89 " )
+forest(MLMA, atransf = exp, at = log(c(.05, .25, 1, 4)), xlim=c(-6,6), cex=.5)
+text(-5, -10, pos=4, cex=.5, "number of samples: 764 ; number of studies: 92 " )
+```
+```{r}
+mod_table <- orchaRd::mod_results(MLMA,  data = analysis, group = "Study")
+orchaRd::orchard_plot(mod_table, xlab = "Acclimation Response Ratio (ARR)", angle = 45)
+```
+
+```{r}
+#(1) According to the output of R, the mean of overall meta-analytic will be estimated as 0.1435, it means the contant mean will be estimated as 0.1435. And the corresponding confidence interval of the overall mean of log response ratio will be (-0.0865,  0.3712). It means all observation will have a part of fixed mean which is estimated as 0.1423.
+
+#(2) According to the I^2 and the predict() function , we can see that the total I^2 is 100 while the study take spart of 10% and the residual take part of 90%. When it comes to the predict level of it, it shows that the response ratio will be in the 95% predict interval: (0.0160	83.1082).
+
+#(3) according to the forest plot or the forest plot from orchard, it shows that most values are centered by 1 and it looks like more points stand in the (0,1) intervals than others. It seems that there is little difference between the mean of control group and that of experimental group.
+```
+
+
+```{r}
+funnel(MLMA,ylim=c(1:4,by=2),yaxis="seinv",level=c(90, 95, 99),ylab="Precision (1/SE)",shade=c("white", "gray", "darkgray"), refline = 0, cex = 0.4)
+funnel(MLMA_1,ylim=c(1:4,by=2),yaxis="seinv",level=c(90, 95, 99),ylab="Precision (1/SE)",shade=c("white", "gray", "darkgray"), refline = 0, cex = 0.4)
+```
+
+```{r}
+# to generate the time lag plot
+analysis$c_log_year <- scale(analysis$Year..print.)
+metareg_se_time <- rma.mv(yi ~ 1+c_log_year, V = vi, test = "t", dfs = "contain", data = analysis, random = list(~1|Study, ~1|residual))
+p2 <- orchaRd::bubble_plot(metareg_se_time, mod = "c_log_year", group = "Study", data = analysis, xlab = "Publication Year (log-transformed & scaled)", ylab = "yi”, legend.pos = ”none")
+p2
+
+ggplot(analysis, aes(y = yi, x = exp(Year..print.) , size = 1/sqrt(vi))) + geom_point(alpha = 0.3) +
+    geom_smooth(method = lm, col = "red", show.legend = FALSE) + labs(x = "Publication Year",
+    y = "Fisher's Z-transformed Correlation Coefficient (Zr)", size = "Precision (1/SE)") +
+    theme_classic()
+```
+
+
+```{r}
+analysis$Year..print. = log(analysis$Year..print.)
+MLMR = rma.mv(yi~c_log_year,V = vi, method = "REML",random =  list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
+MLMR
+
+```
+
+```{r}
+MLMT = rma.mv(yi~1+1/vi,V = vi, method = "REML",random =  list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
+MLMT
+```
+```{r}
+# (1)According to above results, especially in the time-lag plot, we can see that the log response ratio will approach to 0 with the growth of the year. And there may be time-lag bias because the average effect size probably converges on the "true" mean as more and more studies accumulate. And from the above results of the model including year as a modeerator, the confidence level of the c_log_year doesn't include the 0 which means the coefficient for the year factor is significant. 
+
+#(2) when it comes to the file drawer bias, according to above results, the model which includes the term 1/vi is the same as that which doesn't include the 1/vi. So according to the last model, there might be not file-drawer biases. 
+
+```
+
+
+```{r}
+# According to the funnel plot or the time lag plot, it's obvious that there is a study which has a larger se which has been published early. And it has been figured out as a22 L\x9annstedt et al, and its index is 180. It contributes to the time lag bias since it was published eary with a larger sampling variabce. Simliarly, Raby et al and Ferrari et al also have contributed to publication bias.
+
+# To compare Clement et. al. (2022) with these studies, I think what I obtain from last 92 studies will be less significant than the conclusion from Clement et. al. (2022). According to Clement et. al. (2022), they found evidence for a decline effect in ocean acidification studies on fish behavior. With out method, the decreasing trend is less obvious than that in the Clement et. al. (2022). And there is a sentence in Clement et. al. (2022): "Generally, effect size magnitudes (absolute lnRR) in this field have decreased by an order of magnitude over the past decade, from mean effect size magnitudes >5 in 2009 to 2010 to effect size magnitudes <0.5 after 2015 (Fig 1a and 1b, S1 Table)"[Clement et. al. (2022)].  It cited the research papers from 2009 to 2010 to support the conclusion. Additionally, there are also some citerions as below:
+
+
+#[1]Riebesell U, Fabry V, Hansson L, Gattuso J-P. Guide to best practices for ocean acidification research and data reporting. LU: Publications Office; 2011. https://data.europa.eu/doi/10.2777/66906.
+#[2]Baumann H. Experimental assessments of marine species sensitivities to ocean acidification and co-stressors: How far have we come? Can J Zool. 2019;97:399–408.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+```
