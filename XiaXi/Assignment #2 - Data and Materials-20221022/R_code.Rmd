@@ -21,17 +21,20 @@ library(orchaRd)
 ```
 
 ```{r}
-# GitHub:https://github.com/ayrxx/ixia.git
+# This is the link for my GitHub, my code, analysis and data is setup in this public GitHub Repository.
+# GitHub: https://github.com/ayrxx/ixia.git
+# And there is a file called "readme", it contains my workflow, meta-data and file structure.
 ```
 
+### Question 1. Correct analysis of Clark et al.(2020)data to generate the summary statistics for each of the fish species' average activity for each treatment.
 ```{r}
+# Import the file and delete the NA.
 data = read.csv("OA_activitydat_20190302_BIOL3207.csv")
 data_clean <- data%>%filter(!(is.na(activity)))
 data_clean = as_tibble(data_clean)
-
 ```
 
-Drop out irrelevant columns and check that there are no spelling issues in `species` and `treatment`. Create a table of summary data that includes: 1) the mean, 2) the standard error and 3) the sample sizes of unique fish across ALL six fish species for each treatment. 
+##### Drop out irrelevant columns and check that there are no spelling issues in `species` and `treatment`. 
 
 ```{r summaryTab}
 # Drop irrelevant columns
@@ -54,9 +57,11 @@ data_count = spread(data_count, treatment,n)
 names(data_count) = c("Species","oa.n", "ctrl.n")
 names(data_pre)[1] = "Species"
 data_new = merge(data_pre, data_count, by = "Species")
+```
 
-  
-  
+##### Create a table of summary data that includes: 1) the mean, 2) the standard error and 3) the sample sizes of unique fish across ALL six fish species for each treatment. 
+
+```{r}
 # Use flextable to render the summary table in a tidy format
 flextable(
   data_new,
@@ -67,6 +72,8 @@ flextable(
   theme_fun = theme_booktabs
 )
 ```
+
+### Question 2&3. Through coding, merge the summary statistics.
 ```{r}
 # merge the summary statistics with the metadata
 clark = read.csv("clark_paper_data.csv")
@@ -87,9 +94,14 @@ flextable(
 )
 data_final = data_final%>%filter(ctrl.n>0, ctrl.mean>0, ctrl.sd>0, oa.n>0,oa.mean>0,oa.sd>0)# to make sure the log can reflect the actual comparision between control and treat groups.
 ```
+
+### Question 4&5. Calculate the lnRR effect size for every row of the dataframe. And correct meta-analytic model fitted to the data that controls for the sampling variance of lnRR.
+
 ```{r}
 analysis = escalc(measure = "ROM", m1i = oa.mean, m2i = ctrl.mean, sd1i = oa.sd, sd2i = ctrl.sd,n1i = oa.n, n2i = ctrl.n, data = data_final)
+```
 
+```{r}
 res = rma(yi,vi,method = "DL",data = analysis)
 MLMA = rma.mv(yi~1,V = vi, method = "REML", random = list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
 MLMA
@@ -98,6 +110,7 @@ analysis_2 = analysis[which(analysis$vi<1.46307 & analysis$vi>0.00074 & analysis
 MLMA_1 = rma.mv(yi~1,V = vi, method = "REML", random = list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis_2)
 # to build a random effects model of data_final
 ```
+
 ```{r}
 predict(MLMA, transf = exp)
 predict(MLMA_1, transf = exp)
@@ -131,6 +144,8 @@ mod_table <- orchaRd::mod_results(MLMA,  data = analysis, group = "Study")
 orchaRd::orchard_plot(mod_table, xlab = "Acclimation Response Ratio (ARR)", angle = 45)
 ```
 
+### Question 6. Written paragraph of the findings and what they mean which is supported with a figure.
+
 ```{r}
 #(1) According to the output of R, the mean of overall meta-analytic will be estimated as 0.1435, it means the contant mean will be estimated as 0.1435. And the corresponding confidence interval of the overall mean of log response ratio will be (-0.0865,  0.3712). It means all observation will have a part of fixed mean which is estimated as 0.1423.
 
@@ -139,11 +154,14 @@ orchaRd::orchard_plot(mod_table, xlab = "Acclimation Response Ratio (ARR)", angl
 #(3) according to the forest plot or the forest plot from orchard, it shows that most values are centered by 1 and it looks like more points stand in the (0,1) intervals than others. It seems that there is little difference between the mean of control group and that of experimental group.
 ```
 
+### Question 7. Funnel plot.
 
 ```{r}
 funnel(MLMA,ylim=c(1:4,by=2),yaxis="seinv",level=c(90, 95, 99),ylab="Precision (1/SE)",shade=c("white", "gray", "darkgray"), refline = 0, cex = 0.4)
 funnel(MLMA_1,ylim=c(1:4,by=2),yaxis="seinv",level=c(90, 95, 99),ylab="Precision (1/SE)",shade=c("white", "gray", "darkgray"), refline = 0, cex = 0.4)
 ```
+
+### Question 8. Time-lag plot.
 
 ```{r}
 # to generate the time lag plot
@@ -158,18 +176,23 @@ ggplot(analysis, aes(y = yi, x = exp(Year..print.) , size = 1/sqrt(vi))) + geom_
     theme_classic()
 ```
 
+### Question 9. Formal meta-regression model that includes year as a moderator.
 
 ```{r}
 analysis$Year..print. = log(analysis$Year..print.)
 MLMR = rma.mv(yi~c_log_year,V = vi, method = "REML",random =  list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
 MLMR
-
 ```
+
+### Question 10. Formal meta-regression model that includes inverse sampling variance.
 
 ```{r}
 MLMT = rma.mv(yi~1+1/vi,V = vi, method = "REML",random =  list(~1|Study,~1|residual), dfs = "contain",test = "t",data = analysis)
 MLMT
 ```
+
+### Question 11. A written paragraph the discusses.
+
 ```{r}
 # (1)According to above results, especially in the time-lag plot, we can see that the log response ratio will approach to 0 with the growth of the year. And there may be time-lag bias because the average effect size probably converges on the "true" mean as more and more studies accumulate. And from the above results of the model including year as a modeerator, the confidence level of the c_log_year doesn't include the 0 which means the coefficient for the year factor is significant. 
 
@@ -177,6 +200,7 @@ MLMT
 
 ```
 
+### Question 12. Identify any studies contributing to publication bias. 
 
 ```{r}
 # According to the funnel plot or the time lag plot, it's obvious that there is a study which has a larger se which has been published early. And it has been figured out as a22 L\x9annstedt et al, and its index is 180. It contributes to the time lag bias since it was published eary with a larger sampling variabce. Simliarly, Raby et al and Ferrari et al also have contributed to publication bias.
